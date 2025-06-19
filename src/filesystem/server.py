@@ -279,15 +279,19 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
         elif name == "read_multiple_files":
             args = ReadMultipleFilesArgs(**arguments)
             results = []
+            processed_paths = set()
             for file_path in args.paths:
-                try:
-                    valid_path = validate_path(file_path)
-                    content = await asyncio.to_thread(lambda: open(valid_path, "r", encoding="utf-8").read())
-                    virtual_path = convert_to_virtual_path(valid_path)
-                    results.append(f"{virtual_path}:\n{content}\n")
-                except Exception as e:
-                    results.append(f"{file_path}: Error - {str(e)}")
-            return [types.TextContent(type="text", text="\n---\n".join(results))]
+                if file_path not in processed_paths:
+                    try:
+                        valid_path = validate_path(file_path)
+                        content = await asyncio.to_thread(lambda: open(valid_path, "r", encoding="utf-8").read())
+                        virtual_path = convert_to_virtual_path(valid_path)
+                        results.append(f"### {virtual_path}:\n```\n{content}\n```\n")
+                        processed_paths.add(file_path)
+                    except Exception as e:
+                        results.append(f"###{file_path}:\nError - {str(e)}\n")
+                        processed_paths.add(file_path)
+            return [types.TextContent(type="text", text="\n".join(results))]
 
         elif name == "write_file":
             args = WriteFileArgs(**arguments)
