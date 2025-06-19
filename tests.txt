@@ -1,0 +1,11 @@
+{ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2024-11-05", "capabilities": { "roots": { "listChanged": true }, "sampling": {}, "elicitation": {} }, "clientInfo": { "name": "ExampleClient", "title": "Example Client Display Name", "version": "1.0.0" } }}
+
+{ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} }
+
+
+
+{"jsonrpc":"2.0","method":"listTools","params":{},"id":792}
+
+{"jsonrpc":"2.0","method":"callTool","params":{"name":"list_directory","arguments":{"path":"."}},"id":791}
+
+{"jsonrpc":"2.0","method":"callTool","params":{"name":"list_allowed_directories","arguments":{}},"id":791}
