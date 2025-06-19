@@ -96,18 +96,29 @@ def apply_file_edits_sync(path: str, edits: List[Dict[str, str]], dry_run: bool)
     return diff_str
 
 
-async def build_directory_tree(path: str) -> List[Dict[str, Any]]:
-    """Recursively build a directory tree structure with virtual paths."""
-    entries = await asyncio.to_thread(lambda: os.listdir(path))
-    tree = []
-    for entry in entries:
-        full_path = os.path.join(path, entry)
-        virtual_full_path = convert_to_virtual_path(full_path)
-        node = {"name": entry, "type": "file" if os.path.isfile(full_path) else "directory"}
-        if node["type"] == "directory":
-            node["children"] = await build_directory_tree(full_path)
-        tree.append(node)
-    return tree
+async def build_directory_tree(path: str) -> List[str]:
+    """Build a list of full virtual paths to all files, including empty directories with a trailing slash."""
+    paths = []
+    for root, dirs, files in await asyncio.to_thread(os.walk, path):
+        virtual_root = convert_to_virtual_path(root)
+        # Add all files
+        for file in files:
+            full_path = os.path.join(root, file)
+            virtual_path = convert_to_virtual_path(full_path)
+            paths.append(virtual_path)
+        # Add directories (empty ones get a trailing slash)
+        for dir in dirs:
+            full_dir_path = os.path.join(root, dir)
+            virtual_dir_path = convert_to_virtual_path(full_dir_path)
+            dir_contents = os.listdir(full_dir_path)
+            if not dir_contents:  # Empty directory
+                paths.append(virtual_dir_path + "/")
+    # Add the root directory itself if it's empty
+    root_contents = await asyncio.to_thread(os.listdir, path)
+    if not root_contents:
+        virtual_root = convert_to_virtual_path(path)
+        paths.append(virtual_root + "/")
+    return sorted(paths)
 
 
 async def search_files(root_path: str, pattern: str, exclude_patterns: List[str]) -> List[str]:
@@ -222,7 +233,7 @@ async def handle_list_tools() -> List[types.Tool]:
         ),
         types.Tool(
             name="directory_tree",
-            description="Get a recursive tree view of files and directories as a JSON structure. Each entry includes 'name', 'type' (file/directory), and 'children' for directories. Files have no children array, while directories always have a children array (which may be empty). The output is formatted with 2-space indentation for readability. Only works within allowed directories.",
+            description="Get a list of full paths to all files and empty directories (with trailing slash) in a directory. Returns a JSON array of strings sorted alphabetically. Only works within allowed directories.",
             inputSchema=DirectoryTreeArgs.schema(),
         ),
         types.Tool(
@@ -311,8 +322,8 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
         elif name == "directory_tree":
             args = DirectoryTreeArgs(**arguments)
             valid_path = validate_path(args.path)
-            tree = await build_directory_tree(valid_path)
-            return [types.TextContent(type="text", text=json.dumps(tree, indent=2))]
+            paths = await build_directory_tree(valid_path)
+            return [types.TextContent(type="text", text=json.dumps(paths, indent=2))]
 
         elif name == "move_file":
             args = MoveFileArgs(**arguments)
