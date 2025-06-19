@@ -11,19 +11,35 @@ import mcp.types as types
 from mcp.server import Server, InitializationOptions, NotificationOptions
 import mcp.server.stdio
 
-# Module-level storage for allowed directories
+# Module-level storage for allowed directories and their virtual mappings
 _allowed_dirs: List[str] = []
+_virtual_to_real: Dict[str, str] = {}
+_real_to_virtual: Dict[str, str] = {}
 
 
 def set_allowed_dirs(dirs: List[str]) -> None:
-    """Set the global list of allowed directories."""
-    global _allowed_dirs
-    _allowed_dirs = dirs
+    """Set the global list of allowed directories with virtual mappings."""
+    global _allowed_dirs, _virtual_to_real, _real_to_virtual
+    _allowed_dirs = [os.path.abspath(os.path.expanduser(d)) for d in dirs]
+
+    # Create virtual path mappings (/data/a, /data/b, etc.)
+    _virtual_to_real = {f"/data/{chr(97 + i)}": real_dir for i, real_dir in enumerate(_allowed_dirs)}
+    _real_to_virtual = {real_dir: virtual_dir for virtual_dir, real_dir in _virtual_to_real.items()}
 
 
 def validate_path(requested_path: str) -> str:
-    """Validate that a path is within allowed directories, handling symlinks and new files."""
-    expanded_path = os.path.expanduser(requested_path)
+    """Validate that a path is within allowed directories, handling virtual paths, symlinks, and new files."""
+    # Check if the path starts with a virtual directory
+    for virtual_dir, real_dir in _virtual_to_real.items():
+        if requested_path.startswith(virtual_dir + "/") or requested_path == virtual_dir:
+            # Replace virtual path prefix with real path
+            relative_path = requested_path[len(virtual_dir) :].lstrip("/")
+            expanded_path = os.path.join(real_dir, relative_path) if relative_path else real_dir
+            break
+    else:
+        # If not a virtual path, treat as a relative path under first allowed dir (for compatibility)
+        expanded_path = os.path.expanduser(requested_path)
+
     absolute_path = os.path.abspath(expanded_path)
     normalized_path = os.path.normpath(absolute_path)
 
@@ -40,6 +56,15 @@ def validate_path(requested_path: str) -> str:
         if any(real_parent.startswith(allowed_dir + os.sep) or real_parent == allowed_dir for allowed_dir in _allowed_dirs):
             return normalized_path
         raise PermissionError(f"Access denied: parent directory {real_parent} not in allowed directories")
+
+
+def convert_to_virtual_path(real_path: str) -> str:
+    """Convert a real path to its virtual equivalent."""
+    for real_dir, virtual_dir in _real_to_virtual.items():
+        if real_path.startswith(real_dir + os.sep) or real_path == real_dir:
+            relative_path = real_path[len(real_dir) :].lstrip(os.sep)
+            return os.path.join(virtual_dir, relative_path) if relative_path else virtual_dir
+    return real_path  # Fallback, should not happen with validated paths
 
 
 # Helper functions
@@ -72,11 +97,12 @@ def apply_file_edits_sync(path: str, edits: List[Dict[str, str]], dry_run: bool)
 
 
 async def build_directory_tree(path: str) -> List[Dict[str, Any]]:
-    """Recursively build a directory tree structure."""
+    """Recursively build a directory tree structure with virtual paths."""
     entries = await asyncio.to_thread(lambda: os.listdir(path))
     tree = []
     for entry in entries:
         full_path = os.path.join(path, entry)
+        virtual_full_path = convert_to_virtual_path(full_path)
         node = {"name": entry, "type": "file" if os.path.isfile(full_path) else "directory"}
         if node["type"] == "directory":
             node["children"] = await build_directory_tree(full_path)
@@ -85,14 +111,16 @@ async def build_directory_tree(path: str) -> List[Dict[str, Any]]:
 
 
 async def search_files(root_path: str, pattern: str, exclude_patterns: List[str]) -> List[str]:
-    """Recursively search for files matching a pattern."""
+    """Recursively search for files matching a pattern, returning virtual paths."""
     results = []
     for root, dirs, files in os.walk(root_path):
         dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, p) for p in exclude_patterns)]
         files = [f for f in files if not any(fnmatch.fnmatch(f, p) for p in exclude_patterns)]
         for name in dirs + files:
             if fnmatch.fnmatch(name.lower(), pattern.lower()):
-                results.append(os.path.join(root, name))
+                real_path = os.path.join(root, name)
+                virtual_path = convert_to_virtual_path(real_path)
+                results.append(virtual_path)
     return results
 
 
@@ -244,7 +272,8 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
                 try:
                     valid_path = validate_path(file_path)
                     content = await asyncio.to_thread(lambda: open(valid_path, "r", encoding="utf-8").read())
-                    results.append(f"{file_path}:\n{content}\n")
+                    virtual_path = convert_to_virtual_path(valid_path)
+                    results.append(f"{virtual_path}:\n{content}\n")
                 except Exception as e:
                     results.append(f"{file_path}: Error - {str(e)}")
             return [types.TextContent(type="text", text="\n---\n".join(results))]
@@ -252,25 +281,29 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
         elif name == "write_file":
             args = WriteFileArgs(**arguments)
             valid_path = validate_path(args.path)
+            virtual_path = convert_to_virtual_path(valid_path)
             await asyncio.to_thread(lambda: open(valid_path, "w", encoding="utf-8").write(args.content))
-            return [types.TextContent(type="text", text=f"Successfully wrote to {args.path}")]
+            return [types.TextContent(type="text", text=f"Successfully wrote to {virtual_path}")]
 
         elif name == "edit_file":
             args = EditFileArgs(**arguments)
             valid_path = validate_path(args.path)
+            virtual_path = convert_to_virtual_path(valid_path)
             edits = [{"oldText": e.oldText, "newText": e.newText} for e in args.edits]
             diff_str = await asyncio.to_thread(apply_file_edits_sync, valid_path, edits, args.dryRun)
-            return [types.TextContent(type="text", text=diff_str)]
+            return [types.TextContent(type="text", text=diff_str.replace(valid_path, virtual_path))]
 
         elif name == "create_directory":
             args = CreateDirectoryArgs(**arguments)
             valid_path = validate_path(args.path)
+            virtual_path = convert_to_virtual_path(valid_path)
             await asyncio.to_thread(lambda: os.makedirs(valid_path, exist_ok=True))
-            return [types.TextContent(type="text", text=f"Successfully created directory {args.path}")]
+            return [types.TextContent(type="text", text=f"Successfully created directory {virtual_path}")]
 
         elif name == "list_directory":
             args = ListDirectoryArgs(**arguments)
             valid_path = validate_path(args.path)
+            virtual_path = convert_to_virtual_path(valid_path)
             entries = await asyncio.to_thread(lambda: os.listdir(valid_path))
             formatted = [f"[{'DIR' if os.path.isdir(os.path.join(valid_path, e)) else 'FILE'}] {e}" for e in entries]
             return [types.TextContent(type="text", text="\n".join(formatted))]
@@ -285,8 +318,10 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
             args = MoveFileArgs(**arguments)
             valid_source = validate_path(args.source)
             valid_destination = validate_path(args.destination)
+            virtual_source = convert_to_virtual_path(valid_source)
+            virtual_destination = convert_to_virtual_path(valid_destination)
             await asyncio.to_thread(lambda: os.rename(valid_source, valid_destination))
-            return [types.TextContent(type="text", text=f"Successfully moved {args.source} to {args.destination}")]
+            return [types.TextContent(type="text", text=f"Successfully moved {virtual_source} to {virtual_destination}")]
 
         elif name == "search_files":
             args = SearchFilesArgs(**arguments)
@@ -297,8 +332,10 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
         elif name == "get_file_info":
             args = GetFileInfoArgs(**arguments)
             valid_path = validate_path(args.path)
+            virtual_path = convert_to_virtual_path(valid_path)
             stats = await asyncio.to_thread(lambda: os.stat(valid_path))
             info = {
+                "path": virtual_path,
                 "size": stats.st_size,
                 "created": stats.st_ctime,
                 "modified": stats.st_mtime,
@@ -310,7 +347,7 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
             return [types.TextContent(type="text", text="\n".join(f"{k}: {v}" for k, v in info.items()))]
 
         elif name == "list_allowed_directories":
-            return [types.TextContent(type="text", text="Allowed directories:\n" + "\n".join(_allowed_dirs))]
+            return [types.TextContent(type="text", text="Allowed directories:\n" + "\n".join(_virtual_to_real.keys()))]
 
         else:
             raise ValueError(f"Unknown tool: {name}")
@@ -331,8 +368,10 @@ async def main() -> None:
             sys.exit(1)
 
     set_allowed_dirs(allowed_dirs)
+    virtual_dirs = "\n".join(_virtual_to_real.keys())
     print("Secure MCP Filesystem Server running on stdio")
     print(f"Allowed directories: {allowed_dirs}")
+    print(f"Virtual allowed directories:\n{virtual_dirs}")
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(

@@ -23,7 +23,7 @@ uv sync --dev --all-extras
 uv run filesystem /Users/dma/Eigenes/Development/mcp/base
 ```
 
-If it does not build, you can try:
+If you changed the code, run the following to rebuild everything:
 ```bash
 uv cache clean
 ```
