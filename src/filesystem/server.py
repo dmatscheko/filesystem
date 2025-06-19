@@ -96,8 +96,8 @@ def apply_file_edits_sync(path: str, edits: List[Dict[str, str]], dry_run: bool)
     return diff_str
 
 
-async def build_directory_tree(path: str) -> List[str]:
-    """Build a list of full virtual paths to all files, including empty directories with a trailing slash."""
+async def build_directory_tree(path: str) -> str:
+    """Build a newline-separated list of full virtual paths to all files, including empty directories with a trailing slash."""
     paths = []
     for root, dirs, files in await asyncio.to_thread(os.walk, path):
         virtual_root = convert_to_virtual_path(root)
@@ -118,7 +118,7 @@ async def build_directory_tree(path: str) -> List[str]:
     if not root_contents:
         virtual_root = convert_to_virtual_path(path)
         paths.append(virtual_root + "/")
-    return sorted(paths)
+    return "\n".join(sorted(paths))
 
 
 async def search_files(root_path: str, pattern: str, exclude_patterns: List[str]) -> List[str]:
@@ -233,7 +233,7 @@ async def handle_list_tools() -> List[types.Tool]:
         ),
         types.Tool(
             name="directory_tree",
-            description="Get a list of full paths to all files and empty directories (with trailing slash) in a directory. Returns a JSON array of strings sorted alphabetically. Only works within allowed directories.",
+            description="Get a newline-separated list of full paths to all files and empty directories (with trailing slash) in a directory. Paths are sorted alphabetically. Only works within allowed directories.",
             inputSchema=DirectoryTreeArgs.schema(),
         ),
         types.Tool(
@@ -323,7 +323,7 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
             args = DirectoryTreeArgs(**arguments)
             valid_path = validate_path(args.path)
             paths = await build_directory_tree(valid_path)
-            return [types.TextContent(type="text", text=json.dumps(paths, indent=2))]
+            return [types.TextContent(type="text", text=paths)]
 
         elif name == "move_file":
             args = MoveFileArgs(**arguments)
