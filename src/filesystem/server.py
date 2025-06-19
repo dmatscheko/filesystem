@@ -368,10 +368,10 @@ async def main() -> None:
             sys.exit(1)
 
     set_allowed_dirs(allowed_dirs)
-    virtual_dirs = "\n".join(_virtual_to_real.keys())
     print("Secure MCP Filesystem Server running on stdio")
-    print(f"Allowed directories: {allowed_dirs}")
-    print(f"Virtual allowed directories:\n{virtual_dirs}")
+    virtual_dirs_mapping = "\n".join(f"{v} -> {r}" for v, r in _virtual_to_real.items())
+    print("Secure MCP Filesystem Server running on stdio")
+    print(f"Virtual to real directory mappings:\n{virtual_dirs_mapping}")
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
