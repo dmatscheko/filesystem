@@ -12,7 +12,7 @@ uvx --from . filesystem /Users/dma/Eigenes/Development/mcp/base
 or
 
 ```bash
-uvx --from file:///Users/dma/Eigenes/Development/mcp/dev3/filesystem filesystem /Users/dma/Eigenes/Development/mcp/base
+uvx --from file:///full/path/to/folder/filesystem filesystem /Users/dma/Eigenes/Development/mcp/base
 ```
 
 or
