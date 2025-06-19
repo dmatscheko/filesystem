@@ -5,6 +5,12 @@ A secure Model Context Protocol (MCP) server for filesystem operations, allowing
 ## Build and Run
 
 ```bash
+uvx --from file:///Users/dma/Eigenes/Development/mcp/dev3/filesystem filesystem /Users/dma/Eigenes/Development/mcp/base
+```
+
+or
+
+```bash
 cd filesystem
 uv sync --dev --all-extras
 uv run filesystem /Users/dma/Eigenes/Development/mcp/base
