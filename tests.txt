@@ -1,3 +1,26 @@
+Jan-Auditor
+------
+Jan-Auditor is an expert source code auditor that reasons through complex tasks and uses tools to perform them on the user’s behalf.
+------
+You have access to tools to assist in answering the user’s question. Use only one tool per message, and the tool's result will be provided in the user’s next response. Complete tasks by using tools step by step, with each step informed by the previous tool's outcome.
+
+Tool Usage Rules:
+1. Provide exact values as arguments for tools, not variable names.
+2. You may use many tool steps to complete a task.
+3. Avoid repeating a tool call with identical parameters to prevent loops.
+4. Do not read more than 6 files at once with read_multiple_files.
+5. If errors occur, recover by using available relevant information and continue.
+------
+
+
+
+
+
+
+
+
+
+
 { "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2024-11-05", "capabilities": { "roots": { "listChanged": true }, "sampling": {}, "elicitation": {} }, "clientInfo": { "name": "ExampleClient", "title": "Example Client Display Name", "version": "1.0.0" } }}
 
 { "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} }
@@ -9,3 +32,67 @@
 {"jsonrpc":"2.0","method":"callTool","params":{"name":"list_directory","arguments":{"path":"."}},"id":791}
 
 {"jsonrpc":"2.0","method":"callTool","params":{"name":"list_allowed_directories","arguments":{}},"id":791}
+
+
+
+
+
+
+
+
+
+Conduct a security audit on the project. Prioritize security-critical files, such as those handling communication, authentication, or sensitive data, and process them first. Read only the most relevant files to minimize unnecessary reads. For each file analyzed, check for vulnerabilities and report any issues immediately, including the full file path, line number (if applicable), and a description of the vulnerability. Immediately after reading provide a brief status comment for each file or group of files, even if no issues are found.
+
+Tipp: Start with the list_allowed_directories command and then search all *.kt files.
+
+Find the vulnerabilites in the code!
+
+
+
+
+
+
+
+
+
+
+
+
+
+Here's a breakdown of the code structure (only the most important classes are listed here, their directory and file path can be found in the directory tree):
+
+1. **Main Classes**:
+   - `ConsumerReduxState`: Represents the state of the application, including screen state, SDK state, and shipment identifier screen.
+   - `ConsumerStateManager`: Manages the state of the application, including screen state, connectivity status, and various actions.
+   - `LpsScreenStateStore`: Stores the state of the application with a stack history of visited screens.
+   - `ConsumerReduxUiState`: Represents the UI state derived from the Redux state.
+
+2. **Key Relationships**:
+   - `ConsumerStateManager` uses `LpsScreenStateStore` to manage the screen state history.
+   - `ConsumerStateManager` interacts with the `consumerSdk` to perform various actions like starting first mile, last mile, or notified shipment processes.
+   - `ConsumerReduxState` is converted to `ConsumerReduxUiState` to provide UI-specific data.
+   - `LpsScreenStateStore` uses a stack to keep track of visited screens and provides methods to manage the history.
+
+3. **Key Functions**:
+   - `ConsumerStateManager` has methods to start various processes (first mile, last mile, notified shipment), handle back navigation, and manage requirements checks.
+   - `LpsScreenStateStore` provides methods to manage the screen state history, including resetting the history on abort.
+
+4. **Data Structures**:
+   - `ConsumerReduxState` contains the current screen state, SDK state, and shipment identifier screen.
+   - `ConsumerReduxUiState` is derived from `ConsumerReduxState` and includes UI-specific data like compartment list and locker type.
+   - `LpsScreenStateStore` uses an `ArrayDeque` to manage the stack of visited screens.
+
+5. **Key Components**:
+   - `ConsumerStateManagerImpl`: Implements the `ConsumerStateManager` interface and manages the state of the application.
+   - `LpsScreenStateStoreImpl`: Implements the `LpsScreenStateStore` interface and manages the stack of visited screens.
+
+6. **State Management**:
+   - The application uses Redux for state management, with `ConsumerReduxState` as the main state object.
+   - The `ConsumerStateManager` handles actions and updates the state, which is then converted to `ConsumerReduxUiState` for UI purposes.
+   - The `LpsScreenStateStore` manages the history of visited screens, ensuring that the application can navigate back to previous screens.
+
+7. **Connectivity and Requirements**:
+   - The `ConsumerStateManager` handles connectivity status and requirements checks, using listeners to update the state when connectivity or requirements change.
+   - The `ConsumerStateManager` can abort processes and reset the state when necessary.
+
+In summary, this code provides a state management system for a consumer application, using Redux for state management, a stack-based history for screen navigation, and various components to handle different processes and requirements checks.

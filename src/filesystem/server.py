@@ -97,33 +97,47 @@ def apply_file_edits_sync(path: str, edits: List[Dict[str, str]], dry_run: bool)
 
 
 async def build_directory_tree(path: str) -> str:
-    """Build a newline-separated list of full virtual paths to all files, including empty directories with a trailing slash."""
+    """Build a newline-separated list of paths relative to the requested path, including empty directories with a trailing slash."""
     paths = []
+    virtual_root = convert_to_virtual_path(path)
+
     for root, dirs, files in await asyncio.to_thread(os.walk, path):
-        virtual_root = convert_to_virtual_path(root)
+        # Skip the root path itself
+        if root == path:
+            continue
         # Add all files
         for file in files:
             full_path = os.path.join(root, file)
             virtual_path = convert_to_virtual_path(full_path)
-            paths.append(virtual_path)
+            # Get the relative path from the requested virtual root
+            relative_path = os.path.relpath(virtual_path, virtual_root)
+            paths.append(relative_path)
         # Add directories (empty ones get a trailing slash)
         for dir in dirs:
             full_dir_path = os.path.join(root, dir)
             virtual_dir_path = convert_to_virtual_path(full_dir_path)
             dir_contents = os.listdir(full_dir_path)
+            # Get the relative path from the requested virtual root
+            relative_path = os.path.relpath(virtual_dir_path, virtual_root)
             if not dir_contents:  # Empty directory
-                paths.append(virtual_dir_path + "/")
+                paths.append(relative_path + "/")
+
     # Add the root directory itself if it's empty
     root_contents = await asyncio.to_thread(os.listdir, path)
     if not root_contents:
-        virtual_root = convert_to_virtual_path(path)
         paths.append(virtual_root + "/")
-    return "\n".join(sorted(paths))
+
+    # Sort paths and format output
+    output = [f"Contents of {virtual_root}:"]
+    output.extend(sorted(paths))
+    return "\n".join(output)
 
 
 async def search_files(root_path: str, pattern: str, exclude_patterns: List[str]) -> List[str]:
-    """Recursively search for files matching a pattern, returning virtual paths."""
+    """Recursively search for files and directories matching a pattern, returning relative virtual paths."""
     results = []
+    virtual_root = convert_to_virtual_path(root_path)
+
     for root, dirs, files in os.walk(root_path):
         dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, p) for p in exclude_patterns)]
         files = [f for f in files if not any(fnmatch.fnmatch(f, p) for p in exclude_patterns)]
@@ -131,8 +145,17 @@ async def search_files(root_path: str, pattern: str, exclude_patterns: List[str]
             if fnmatch.fnmatch(name.lower(), pattern.lower()):
                 real_path = os.path.join(root, name)
                 virtual_path = convert_to_virtual_path(real_path)
-                results.append(virtual_path)
-    return results
+                # Get the relative path from the requested virtual root
+                relative_path = os.path.relpath(virtual_path, virtual_root)
+                # Add trailing slash for directories
+                if os.path.isdir(real_path):
+                    relative_path += "/"
+                results.append(relative_path)
+
+    # Format output
+    output = [f"Contents of {virtual_root}:"]
+    output.extend(sorted(results))
+    return "\n".join(output) if results else "\n".join([f"Contents of {virtual_root}:", "No matches found"])
 
 
 # Pydantic models for tool arguments
@@ -233,7 +256,7 @@ async def handle_list_tools() -> List[types.Tool]:
         ),
         types.Tool(
             name="directory_tree",
-            description="Get a newline-separated list of full paths to all files and empty directories (with trailing slash) in a directory. Paths are sorted alphabetically. Only works within allowed directories.",
+            description="Get a newline-separated list of paths relative to the requested path, including empty directories (with a trailing slash). Paths are sorted alphabetically. Only works within allowed directories.",
             inputSchema=DirectoryTreeArgs.schema(),
         ),
         types.Tool(
@@ -243,7 +266,7 @@ async def handle_list_tools() -> List[types.Tool]:
         ),
         types.Tool(
             name="search_files",
-            description="Recursively search for files and directories matching a file name pattern. Searches through all subdirectories from the starting path. The search is case-insensitive and matches partial names. Returns full paths to all matching items. Great for finding files when you don't know their exact location. Only searches within allowed directories.",
+            description="Recursively search for files and directories matching a file name pattern. Searches through all subdirectories from the starting path. The search is case-insensitive and matches partial names. Returns relative paths to all matching items with empty directories marked by a trailing slash. Only searches within allowed directories.",
             inputSchema=SearchFilesArgs.schema(),
         ),
         types.Tool(
@@ -342,7 +365,7 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any] | None) -> List[
             args = SearchFilesArgs(**arguments)
             valid_path = validate_path(args.path)
             results = await search_files(valid_path, args.pattern, args.excludePatterns)
-            return [types.TextContent(type="text", text="\n".join(results) if results else "No matches found")]
+            return [types.TextContent(type="text", text=results)]
 
         elif name == "get_file_info":
             args = GetFileInfoArgs(**arguments)
