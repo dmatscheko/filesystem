@@ -424,7 +424,7 @@ async def main() -> None:
             sys.exit(1)
     set_allowed_dirs(real_dirs)
     virtual_dirs_mapping = "\n".join(f"{v} -> {r}" for v, r in _virtual_to_real.items())
-    print(f"Secure MCP Filesystem Server running on stdio\nVirtual to real directory mappings:\n{virtual_dirs_mapping}")
+    print(f"MCP Filesystem Server running on stdio\nVirtual to real directory mappings:\n{virtual_dirs_mapping}")
     async with mcp.server.stdio.stdio_server() as (read, write):
         await server.run(
             read,
