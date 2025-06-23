@@ -95,6 +95,11 @@ If you changed the code, run the following to rebuild everything:
 uv cache clean
 ```
 
+You can also access the server with the MCP Inspector:
+```bash
+npx -y @modelcontextprotocol/inspector uvx --from git+https://github.com/dmatscheko/filesystem filesystem /path/to/allowed/directory1 [/path/to/allowed/directory2 ...]
+```
+
 
 ## Example MCP protocol:
 
