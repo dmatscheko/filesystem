@@ -20,7 +20,9 @@ Maps real directories to virtual paths (e.g., `/data/a`) to shorten paths and ob
 
 ## Jan Configuration:
 
-An easy option is to use [Jan](https://jan.ai/) with [LM Studio](https://lmstudio.ai/) as backend. This allows e.g. to use MLX versions and models that are not yet supported by Jan. For this, at the model providers, click on "Add providers". Add a random string as API key, `http://127.0.0.1:1234/v1` as the Base URL and click "refresh", so that Jan can fetch the models from LM Studio. Then click at the edit button (the pencil) and activate "Tools" for the models you want to use with this MCP server.
+An easy option is to use [Jan](https://jan.ai/) with [LM Studio](https://lmstudio.ai/) as backend. This allows e.g. to use MLX versions and models that are not yet supported by Jan.
+
+To do this, go to the model providers in the Jan settings and click "Add Providers." Enter a random string as the API key, set `http://127.0.0.1:1234/v1` as the Base URL, and click "Refresh" to allow Jan to fetch models from LM Studio. Then, click the edit button (pencil icon) and enable "Tools" for the models you want to use with this MCP server.
 
 ### MCP Server Setting
 
