@@ -26,7 +26,7 @@ To do this, go to the model providers in the Jan settings and click "Add Provide
 
 ### MCP Server Setting
 
-Add the following to your Jan.ai MCP server settings, replacing `/development/mcp/base` with your desired directory. You can also replace `git+https://github.com/dmatscheko/filesystem` with something like `file:///wherever/the/repository/is/filesystem` if you want to download the repository and use it offline:
+Add the following to your Jan.ai MCP server settings, replacing `/path/to/allowed/directory` with your desired directory and optionally adding more allowed directories. You can also replace `git+https://github.com/dmatscheko/filesystem` with something like `file:///wherever/the/repository/is/filesystem` if you want to download the repository and use it offline:
 ```json
 {
   "command": "uvx",
@@ -34,7 +34,7 @@ Add the following to your Jan.ai MCP server settings, replacing `/development/mc
     "--from",
     "git+https://github.com/dmatscheko/filesystem",
     "filesystem",
-    "/development/mcp/base"
+    "/path/to/allowed/directory"
   ],
   "env": {},
   "active": true
@@ -73,13 +73,13 @@ Note: This prompt works e.g. with the model `devstral-small-2505` or more advanc
 ```bash
 git clone https://github.com/dmatscheko/filesystem.git
 cd filesystem
-uvx --from . filesystem /development/base_directory
+uvx --from . filesystem /path/to/allowed/directory1 [/path/to/allowed/directory2 ...]
 ```
 
 or
 
 ```bash
-uvx --from file:///full/path/to/folder/filesystem filesystem /development/base_directory
+uvx --from file:///full/path/to/folder/filesystem /path/to/allowed/directory1 [/path/to/allowed/directory2 ...]
 ```
 
 or
@@ -87,7 +87,7 @@ or
 ```bash
 cd filesystem
 uv sync --dev --all-extras
-uv run filesystem /development/base_directory
+uv run filesystem /path/to/allowed/directory1 [/path/to/allowed/directory2 ...]
 ```
 
 If you changed the code, run the following to rebuild everything:
