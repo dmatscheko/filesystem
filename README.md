@@ -20,6 +20,8 @@ Maps real directories to virtual paths (e.g., `/data/a`) to shorten paths and ob
 
 ## [Jan.ai](https://jan.ai/) Configuration:
 
+An easy option is to use Jan with LM Studio as backend. This allows e.g. to use MLX versions and models that are not yet supported by Jan. For this, at the model providers, click on "Add providers". Add a random string as API key, `http://127.0.0.1:1234/v1` as the Base URL and click "refresh", so that Jan can fetch the models from LM Studio. Then click at the edit button (the pencil) and activate "Tools" for the models you want to use with this MCP server.
+
 ### MCP Server Setting
 
 Add the following to your Jan.ai MCP server settings, replacing `/development/mcp/base` with your desired directory. You can also replace `git+https://github.com/dmatscheko/filesystem` with something like `file:///wherever/the/repository/is/filesystem` if you want to download the repository and use it offline:
