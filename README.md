@@ -1,6 +1,6 @@
 # MCP Filesystem Server
 
-A relatively secure, asynchronous MCP server allowing file and directory manipulation within specified directories.
+A relatively secure, asynchronous [MCP](https://modelcontextprotocol.io/introduction) server allowing file and directory manipulation within specified directories.
 Maps real directories to virtual paths (e.g., `/data/a`) to shorten paths and obscure real filesystem structure from clients, such as LLMs.
 
 ## File Operations:
