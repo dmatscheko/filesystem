@@ -1,0 +1,3 @@
+.DS_Store
+uv.lock
+src/filesystem/__pycache__
