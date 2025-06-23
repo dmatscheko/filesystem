@@ -18,9 +18,9 @@ Maps real directories to virtual paths (e.g., `/data/a`) to shorten paths and ob
 * **list_allowed_directories:** List accessible directories. Use this once before trying to access files.
 * **edit_file:** Edit file with line-based replacements, returns diff. Limited to allowed dirs.
 
-## [Jan.ai](https://jan.ai/) Configuration:
+## Jan Configuration:
 
-An easy option is to use Jan with LM Studio as backend. This allows e.g. to use MLX versions and models that are not yet supported by Jan. For this, at the model providers, click on "Add providers". Add a random string as API key, `http://127.0.0.1:1234/v1` as the Base URL and click "refresh", so that Jan can fetch the models from LM Studio. Then click at the edit button (the pencil) and activate "Tools" for the models you want to use with this MCP server.
+An easy option is to use [Jan](https://jan.ai/) with [LM Studio](https://lmstudio.ai/) as backend. This allows e.g. to use MLX versions and models that are not yet supported by Jan. For this, at the model providers, click on "Add providers". Add a random string as API key, `http://127.0.0.1:1234/v1` as the Base URL and click "refresh", so that Jan can fetch the models from LM Studio. Then click at the edit button (the pencil) and activate "Tools" for the models you want to use with this MCP server.
 
 ### MCP Server Setting
 
