@@ -18,7 +18,7 @@ Maps real directories to virtual paths (e.g., `/data/a`) to shorten paths and ob
 * **list_allowed_directories:** List accessible directories. Use this once before trying to access files.
 * **edit_file:** Edit file with line-based replacements, returns diff. Limited to allowed dirs.
 
-## Jan.ai Configuration:
+## [Jan.ai](https://jan.ai/) Configuration:
 
 ### MCP Server Setting
 
