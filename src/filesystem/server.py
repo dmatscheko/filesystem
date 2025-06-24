@@ -313,7 +313,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
                         seen.add(virtual_path)
                         real_path = validate_virtual_path(virtual_path)
                         content = open(real_path, "r", encoding="utf-8").read()
-                        results.append(f"### {to_virtual_path(real_path)}:\n```\n{content}\n```\n")
+                        results.append(f"### {virtual_path}:\n```\n{content}\n```\n")
                     except Exception as e:
                         results.append(f"### {virtual_path}:\n{get_error_message('Error reading', virtual_path, e)}\n")
             return [TextContent(type="text", text="\n".join(results))]
@@ -325,7 +325,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
             a = WriteFileArgs(**args)
             real_path = validate_virtual_path(a.virtual_path)
             open(real_path, "w", encoding="utf-8").write(a.content)
-            return [TextContent(type="text", text=f"Wrote to {to_virtual_path(real_path)}")]
+            return [TextContent(type="text", text=f"Wrote to {a.virtual_path}")]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error writing", None if "a" not in locals() else a.virtual_path, e))]
 
@@ -343,7 +343,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
             a = DirArgs(**args)
             real_path = validate_virtual_path(a.virtual_path)
             os.makedirs(real_path, exist_ok=True)
-            return [TextContent(type="text", text=f"Created {to_virtual_path(real_path)}")]
+            return [TextContent(type="text", text=f"Created {a.virtual_path}")]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error creating", None if "a" not in locals() else a.virtual_path, e))]
 
@@ -371,7 +371,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
             real_source = validate_virtual_path(a.virtual_source)
             real_destination = validate_virtual_path(a.virtual_destination)
             os.rename(real_source, real_destination)
-            return [TextContent(type="text", text=f"Moved {to_virtual_path(real_source)} to {to_virtual_path(real_destination)}")]
+            return [TextContent(type="text", text=f"Moved {a.virtual_source} to {a.virtual_destination}")]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error moving", None if "a" not in locals() else a.virtual_source, e))]
 
@@ -393,7 +393,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
             real_path = validate_virtual_path(a.virtual_path)
             stats = os.stat(real_path)
             info = {
-                "path": to_virtual_path(real_path),
+                "path": a.virtual_path,
                 "size": stats.st_size,
                 "created": format_time(stats.st_ctime),
                 "modified": format_time(stats.st_mtime),
