@@ -10,7 +10,6 @@ from mcp.types import Tool, TextContent
 from mcp.server import Server, InitializationOptions, NotificationOptions
 import mcp.server.stdio
 from typing import Optional
-from pathlib import Path
 from datetime import datetime
 
 
@@ -113,50 +112,24 @@ def apply_edits(virtual_path: str, edits: List[Dict[str, str]], dry_run: bool) -
     return diff
 
 
-def directory_tree(virtual_path: str) -> str:
-    """Generate a directory tree with paths relative to the virtual root."""
-    real_path = validate_virtual_path(virtual_path)
-    root_path = Path(real_path)
-    paths = []
-
-    # Include both regular and hidden files/directories
-    for pattern in ["*", ".*"]:  # First regular files, then dot files
-        for path in root_path.rglob(pattern):
-            # Skip the root path itself
-            if path == root_path:
-                continue
-            # Compute relative path directly in real path space
-            rel_path = os.path.relpath(path, root_path)
-            if path.is_dir():
-                rel_path += "/"
-            paths.append(rel_path)
-
-    # Handle empty directories
-    if not any(root_path.iterdir()):
-        paths.append(virtual_path + "/")
-
-    # Remove duplicates (in case of overlaps) and sort
-    return "\n".join([f"### Contents of {virtual_path}:"] + sorted(set(paths)))
-
-
-def search_files(virtual_path: str, pattern: str, exclude: List[str]) -> str:
-    """Search files by pattern, returning virtual paths."""
+def list_files_recursive(virtual_path: str, pattern: Optional[str] = None, exclude_patterns: Optional[List[str]] = None) -> str:
+    """List files and directories recursively, optionally filtering by pattern."""
     real_path = validate_virtual_path(virtual_path)
     matches = []
-    for real_root, dirs, files in os.walk(real_path):
-        dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, p) for p in exclude)]
-        files = [f for f in files if not any(fnmatch.fnmatch(f, p) for p in exclude)]
-        for name in files + dirs:
-            if fnmatch.fnmatch(name.lower(), pattern.lower()):
-                real_subpath = os.path.join(real_root, name)
-                # Compute relative path from the real root
-                rel_path = os.path.relpath(real_subpath, real_path)
-                # Add trailing slash for directories
-                if os.path.isdir(real_subpath):
+    for root, dirs, files in os.walk(real_path):
+        # Apply exclusions only if there are patterns to exclude
+        if exclude_patterns:
+            dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, p) for p in exclude_patterns)]
+            files = [f for f in files if not any(fnmatch.fnmatch(f, p) for p in exclude_patterns)]
+        rel_root = os.path.relpath(root, real_path) if root != real_path else ""
+        # Collect matches
+        for name in dirs + files:
+            if pattern is None or fnmatch.fnmatch(name.lower(), pattern.lower()):
+                rel_path = os.path.join(rel_root, name).replace(os.sep, "/")
+                if os.path.isdir(os.path.join(root, name)):
                     rel_path += "/"
                 matches.append(rel_path)
-    output = [f"### Contents of {virtual_path}:"]
-    return "\n".join(output + sorted(matches) if matches else output + ["No matches found"])
+    return "\n".join([f"### Contents of {virtual_path}:"] + sorted(matches))
 
 
 # Tool argument models
@@ -197,8 +170,8 @@ class MoveArgs(BaseModel):
 
 class SearchArgs(BaseModel):
     virtual_path: str = Field(..., alias="path")
-    pattern: str
-    excludePatterns: List[str] = []
+    pattern: Optional[str] = None
+    excludePatterns: Optional[List[str]] = []
 
 
 class ListAllowedArgs(BaseModel):
@@ -249,14 +222,14 @@ async def list_tools() -> List[Tool]:
             inputSchema=DirArgs.schema(),
         ),
         Tool(
-            name="move_file",
-            description="Move/rename file or directory. Fails if destination exists. Limited to allowed dirs.",
-            inputSchema=MoveArgs.schema(),
-        ),
-        Tool(
             name="search_files",
             description="Search files or directories by file name pattern. Limited to allowed dirs.",
             inputSchema=SearchArgs.schema(),
+        ),
+        Tool(
+            name="move_file",
+            description="Move/rename file or directory. Fails if destination exists. Limited to allowed dirs.",
+            inputSchema=MoveArgs.schema(),
         ),
         Tool(
             name="get_file_info",
@@ -349,9 +322,16 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
     elif name == "directory_tree":
         try:
             a = DirArgs(**args)
-            return [TextContent(type="text", text=directory_tree(a.virtual_path))]
+            return [TextContent(type="text", text=list_files_recursive(a.virtual_path))]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error listing", None if "a" not in locals() else a.virtual_path, e))]
+
+    elif name == "search_files":
+        try:
+            a = SearchArgs(**args)
+            return [TextContent(type="text", text=list_files_recursive(a.virtual_path, a.pattern, a.excludePatterns))]
+        except Exception as e:
+            return [TextContent(type="text", text=get_error_message("Error searching", None if "a" not in locals() else a.virtual_path, e))]
 
     elif name == "move_file":
         try:
@@ -363,16 +343,9 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error moving", None if "a" not in locals() else a.virtual_source, e))]
 
-    elif name == "search_files":
-        try:
-            a = SearchArgs(**args)
-            return [TextContent(type="text", text=search_files(a.virtual_path, a.pattern, a.excludePatterns))]
-        except Exception as e:
-            return [TextContent(type="text", text=get_error_message("Error searching", None if "a" not in locals() else a.virtual_path, e))]
-
     elif name == "get_file_info":
         try:
-            # Convert timestamps to readable format
+
             def format_time(timestamp):
                 return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
