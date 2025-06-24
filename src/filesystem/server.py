@@ -60,15 +60,6 @@ def validate_virtual_path(virtual_path: str) -> str:
         raise PermissionError("Access denied")
 
 
-def to_virtual_path(real_path: str) -> str:
-    """Convert a real path to its virtual path for user output."""
-    for real_dir, virtual_dir in _real_to_virtual.items():
-        if real_path.startswith(real_dir + os.sep) or real_path == real_dir:
-            relative = real_path[len(real_dir) :].lstrip(os.sep)
-            return os.path.join(virtual_dir, relative) if relative else virtual_dir
-    raise CustomFileSystemError("Path outside allowed directories")
-
-
 def get_error_message(message, virtual_path: str, e: Exception) -> str:
     """Generate a user-friendly error message using the virtual path."""
     virtual_path = virtual_path or "Unknown path"
@@ -108,13 +99,13 @@ def tail_file(real_path: str, lines: int) -> str:
         return "".join(deque(f, maxlen=lines))
 
 
-def apply_edits(real_path: str, edits: List[Dict[str, str]], dry_run: bool) -> str:
+def apply_edits(virtual_path: str, edits: List[Dict[str, str]], dry_run: bool) -> str:
     """Apply text replacements and return a diff using virtual paths."""
+    real_path = validate_virtual_path(virtual_path)
     with open(real_path, "r", encoding="utf-8") as f:
         content = new_content = f.read()
     for edit in edits:
         new_content = new_content.replace(edit["oldText"], edit["newText"])
-    virtual_path = to_virtual_path(real_path)
     diff = "".join(difflib.unified_diff(content.splitlines(keepends=True), new_content.splitlines(keepends=True), fromfile=virtual_path, tofile=virtual_path))
     if not dry_run:
         with open(real_path, "w", encoding="utf-8") as f:
@@ -122,9 +113,9 @@ def apply_edits(real_path: str, edits: List[Dict[str, str]], dry_run: bool) -> s
     return diff
 
 
-def directory_tree(real_path: str) -> str:
+def directory_tree(virtual_path: str) -> str:
     """Generate a directory tree with paths relative to the virtual root."""
-    virtual_root = to_virtual_path(real_path)
+    real_path = validate_virtual_path(virtual_path)
     root_path = Path(real_path)
     paths = []
 
@@ -142,15 +133,15 @@ def directory_tree(real_path: str) -> str:
 
     # Handle empty directories
     if not any(root_path.iterdir()):
-        paths.append(virtual_root + "/")
+        paths.append(virtual_path + "/")
 
     # Remove duplicates (in case of overlaps) and sort
-    return "\n".join([f"### Contents of {virtual_root}:"] + sorted(set(paths)))
+    return "\n".join([f"### Contents of {virtual_path}:"] + sorted(set(paths)))
 
 
-def search_files(real_path: str, pattern: str, exclude: List[str]) -> str:
+def search_files(virtual_path: str, pattern: str, exclude: List[str]) -> str:
     """Search files by pattern, returning virtual paths."""
-    virtual_root = to_virtual_path(real_path)
+    real_path = validate_virtual_path(virtual_path)
     matches = []
     for real_root, dirs, files in os.walk(real_path):
         dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, p) for p in exclude)]
@@ -158,14 +149,13 @@ def search_files(real_path: str, pattern: str, exclude: List[str]) -> str:
         for name in files + dirs:
             if fnmatch.fnmatch(name.lower(), pattern.lower()):
                 real_subpath = os.path.join(real_root, name)
-                virtual_subpath = to_virtual_path(real_subpath)
-                # Get the relative path from the requested virtual root
-                rel_path = os.path.relpath(virtual_subpath, virtual_root)
+                # Compute relative path from the real root
+                rel_path = os.path.relpath(real_subpath, real_path)
                 # Add trailing slash for directories
                 if os.path.isdir(real_subpath):
                     rel_path += "/"
                 matches.append(rel_path)
-    output = [f"### Contents of {virtual_root}:"]
+    output = [f"### Contents of {virtual_path}:"]
     return "\n".join(output + sorted(matches) if matches else output + ["No matches found"])
 
 
@@ -332,8 +322,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
     elif name == "edit_file":
         try:
             a = EditFileArgs(**args)
-            real_path = validate_virtual_path(a.virtual_path)
-            diff = apply_edits(real_path, [{"oldText": e.oldText, "newText": e.newText} for e in a.edits], a.dryRun)
+            diff = apply_edits(a.virtual_path, [{"oldText": e.oldText, "newText": e.newText} for e in a.edits], a.dryRun)
             return [TextContent(type="text", text=diff)]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error editing", None if "a" not in locals() else a.virtual_path, e))]
@@ -360,8 +349,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
     elif name == "directory_tree":
         try:
             a = DirArgs(**args)
-            real_path = validate_virtual_path(a.virtual_path)
-            return [TextContent(type="text", text=directory_tree(real_path))]
+            return [TextContent(type="text", text=directory_tree(a.virtual_path))]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error listing", None if "a" not in locals() else a.virtual_path, e))]
 
@@ -378,8 +366,7 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
     elif name == "search_files":
         try:
             a = SearchArgs(**args)
-            real_path = validate_virtual_path(a.virtual_path)
-            return [TextContent(type="text", text=search_files(real_path, a.pattern, a.excludePatterns))]
+            return [TextContent(type="text", text=search_files(a.virtual_path, a.pattern, a.excludePatterns))]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error searching", None if "a" not in locals() else a.virtual_path, e))]
 
