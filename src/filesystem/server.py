@@ -310,10 +310,10 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
             for virtual_path in a.virtual_paths:
                 if virtual_path not in seen:
                     try:
+                        seen.add(virtual_path)
                         real_path = validate_virtual_path(virtual_path)
                         content = open(real_path, "r", encoding="utf-8").read()
                         results.append(f"### {to_virtual_path(real_path)}:\n```\n{content}\n```\n")
-                        seen.add(virtual_path)
                     except Exception as e:
                         results.append(f"### {virtual_path}:\n{get_error_message('Error reading', virtual_path, e)}\n")
             return [TextContent(type="text", text="\n".join(results))]
