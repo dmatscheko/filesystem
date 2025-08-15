@@ -1,2 +1,2 @@
-mcp>=1.9.4
+fastmcp
 pydantic>=2.11.0
