@@ -7,7 +7,7 @@ import os
 from pydantic import BaseModel, Field, ValidationError
 import re
 import sys
-from typing import Dict, List, Optional
+from typing import Annotated, Dict, List, Optional
 
 
 # Custom error class
@@ -127,76 +127,49 @@ def list_files_recursive(virtual_path: str, pattern: Optional[str] = None, exclu
 
 
 # Tool argument models
-class ReadFileArgs(BaseModel):
-    virtual_path: str = Field(..., alias="path")
-    head: Optional[int] = None
-    tail: Optional[int] = None
-
-
-class ReadMultipleArgs(BaseModel):
-    virtual_paths: List[str] = Field(..., alias="paths")
-
-
-class WriteFileArgs(BaseModel):
-    virtual_path: str = Field(..., alias="path")
-    content: str
-
-
 class EditOp(BaseModel):
     oldText: str = Field(..., description="Line to be replaced")
     newText: str = Field(..., description="Replacement line")
 
 
-class EditFileArgs(BaseModel):
-    virtual_path: str = Field(..., alias="path")
-    edits: List[EditOp]
-    dryRun: bool = False
-
-
-class DirArgs(BaseModel):
-    virtual_path: str = Field(..., alias="path")
-
-
-class MoveArgs(BaseModel):
-    virtual_source: str = Field(..., alias="source")
-    virtual_destination: str = Field(..., alias="destination")
-
-
-class SearchArgs(BaseModel):
-    virtual_path: str = Field(..., alias="path")
-    pattern: Optional[str] = None
-    excludePatterns: Optional[List[str]] = []
-
-
 # Server setup
-mcp = FastMCP("secure-filesystem-server")
+mcp = FastMCP(
+    name="Secure File System Server",
+    instructions="A server that provides tools for securely interacting with a sandboxed file system. All file paths are virtual and mapped to a restricted set of directories on the server.",
+)
 
 
 @mcp.tool
-def read_file(args: ReadFileArgs) -> str:
-    """Read file contents. Allows to head or tail the file. Limited to allowed dirs."""
+def read_file(
+    path: Annotated[str, Field(description="The virtual path of the file to read.")],
+    head: Annotated[Optional[int], Field(description="The number of lines to read from the beginning of the file.")] = None,
+    tail: Annotated[Optional[int], Field(description="The number of lines to read from the end of the file.")] = None,
+) -> str:
+    """Read file contents from the secure file system. Allows reading the whole file, or just the head or tail."""
     try:
-        real_path = validate_virtual_path(args.virtual_path)
-        if args.head is not None and args.tail is not None:
+        real_path = validate_virtual_path(path)
+        if head is not None and tail is not None:
             raise CustomFileSystemError("Specify either head or tail, not both")
-        if args.head is not None:
-            return head_file(real_path, args.head)
-        elif args.tail is not None:
-            return tail_file(real_path, args.tail)
+        if head is not None:
+            return head_file(real_path, head)
+        elif tail is not None:
+            return tail_file(real_path, tail)
         else:
             with open(real_path, "r", encoding="utf-8") as f:
                 return f.read()
     except Exception as e:
-        return get_error_message("Error reading", args.virtual_path, e)
+        return get_error_message("Error reading", path, e)
 
 
 @mcp.tool
-def read_multiple_files(args: ReadMultipleArgs) -> str:
-    """Read the contents of multiple files efficiently. Limited to allowed dirs."""
+def read_multiple_files(
+    paths: Annotated[List[str], Field(description="A list of virtual paths of the files to read.")]
+) -> str:
+    """Read the contents of multiple files efficiently."""
     try:
         results = []
         seen = set()
-        for virtual_path in args.virtual_paths:
+        for virtual_path in paths:
             if virtual_path not in seen:
                 try:
                     seen.add(virtual_path)
@@ -211,90 +184,112 @@ def read_multiple_files(args: ReadMultipleArgs) -> str:
 
 
 @mcp.tool
-def write_file(args: WriteFileArgs) -> str:
-    """Write or overwrite file with text content. Limited to allowed dirs."""
+def write_file(
+    path: Annotated[str, Field(description="The virtual path of the file to write to. If the file exists, it will be overwritten.")],
+    content: Annotated[str, Field(description="The content to write to the file.")],
+) -> str:
+    """Write or overwrite a file with the given text content."""
     try:
-        real_path = validate_virtual_path(args.virtual_path)
+        real_path = validate_virtual_path(path)
         with open(real_path, "w", encoding="utf-8") as f:
-            f.write(args.content)
-        return f"Wrote to {args.virtual_path}"
+            f.write(content)
+        return f"Wrote to {path}"
     except Exception as e:
-        return get_error_message("Error writing", args.virtual_path, e)
+        return get_error_message("Error writing", path, e)
 
 
 @mcp.tool
-def edit_file(args: EditFileArgs) -> str:
-    """Edit file with line-based replacements, returns diff. Limited to allowed dirs."""
+def edit_file(
+    path: Annotated[str, Field(description="The virtual path of the file to edit.")],
+    edits: Annotated[List[EditOp], Field(description="A list of replacement operations to apply to the file.")],
+    dryRun: Annotated[bool, Field(description="If true, returns a diff of the changes without applying them.")] = False,
+) -> str:
+    """Edit a file with line-based replacements and returns a diff of the changes."""
     try:
-        diff = apply_edits(args.virtual_path, [{"oldText": e.oldText, "newText": e.newText} for e in args.edits], args.dryRun)
+        diff = apply_edits(path, [{"oldText": e.oldText, "newText": e.newText} for e in edits], dryRun)
         return diff
     except Exception as e:
-        return get_error_message("Error editing", args.virtual_path, e)
+        return get_error_message("Error editing", path, e)
 
 
 @mcp.tool
-def create_directory(args: DirArgs) -> str:
-    """Create directory, including nested ones. Limited to allowed dirs."""
+def create_directory(
+    path: Annotated[str, Field(description="The virtual path of the directory to create. It can be nested (e.g., /data/a/new/dir).")]
+) -> str:
+    """Create a directory, including any necessary parent directories."""
     try:
-        real_path = validate_virtual_path(args.virtual_path)
+        real_path = validate_virtual_path(path)
         os.makedirs(real_path, exist_ok=True)
-        return f"Created {args.virtual_path}"
+        return f"Created {path}"
     except Exception as e:
-        return get_error_message("Error creating", args.virtual_path, e)
+        return get_error_message("Error creating", path, e)
 
 
 @mcp.tool
-def list_directory(args: DirArgs) -> str:
-    """List files/dirs with [FILE]/[DIR] prefixes. Limited to allowed dirs."""
+def list_directory(
+    path: Annotated[str, Field(description="The virtual path of the directory to list.")]
+) -> str:
+    """List the files and directories within a given directory, indicating whether each entry is a file or a directory."""
     try:
-        real_path = validate_virtual_path(args.virtual_path)
+        real_path = validate_virtual_path(path)
         entries = os.listdir(real_path)
         listing = [f"[{'DIR' if os.path.isdir(os.path.join(real_path, e)) else 'FILE'}] {e}" for e in entries]
         return "\n".join(listing)
     except Exception as e:
-        return get_error_message("Error listing", args.virtual_path, e)
+        return get_error_message("Error listing", path, e)
 
 
 @mcp.tool
-def directory_tree(args: DirArgs) -> str:
-    """Show recursive directory listing. Limited to allowed dirs."""
+def directory_tree(
+    path: Annotated[str, Field(description="The virtual path of the root directory for the tree listing.")]
+) -> str:
+    """Show a recursive directory listing starting from the given path."""
     try:
-        return list_files_recursive(args.virtual_path)
+        return list_files_recursive(path)
     except Exception as e:
-        return get_error_message("Error listing", args.virtual_path, e)
+        return get_error_message("Error listing", path, e)
 
 
 @mcp.tool
-def search_files(args: SearchArgs) -> str:
-    """Search files or directories by file name pattern. Limited to allowed dirs."""
+def search_files(
+    path: Annotated[str, Field(description="The virtual path of the directory to start the search from.")],
+    pattern: Annotated[Optional[str], Field(description="A glob pattern to filter file and directory names (e.g., '*.py').")] = None,
+    excludePatterns: Annotated[Optional[List[str]], Field(description="A list of glob patterns to exclude files or directories.")] = None,
+) -> str:
+    """Search for files and directories by name pattern, with optional exclusions."""
     try:
-        return list_files_recursive(args.virtual_path, args.pattern, args.excludePatterns)
+        return list_files_recursive(path, pattern, excludePatterns)
     except Exception as e:
-        return get_error_message("Error searching", args.virtual_path, e)
+        return get_error_message("Error searching", path, e)
 
 
 @mcp.tool
-def move_file(args: MoveArgs) -> str:
-    """Move/rename file or directory. Fails if destination exists. Limited to allowed dirs."""
+def move_file(
+    source: Annotated[str, Field(description="The virtual path of the file or directory to move.")],
+    destination: Annotated[str, Field(description="The new virtual path for the file or directory.")],
+) -> str:
+    """Move or rename a file or directory. This operation will fail if the destination already exists."""
     try:
-        real_source = validate_virtual_path(args.virtual_source)
-        real_destination = validate_virtual_path(args.virtual_destination)
+        real_source = validate_virtual_path(source)
+        real_destination = validate_virtual_path(destination)
         os.rename(real_source, real_destination)
-        return f"Moved {args.virtual_source} to {args.virtual_destination}"
+        return f"Moved {source} to {destination}"
     except Exception as e:
-        return get_error_message("Error moving", args.virtual_source, e)
+        return get_error_message("Error moving", source, e)
 
 
 @mcp.tool
-def get_file_info(args: DirArgs) -> str:
-    """Get file or directory metadata (size, times, permissions). Limited to allowed dirs."""
+def get_file_info(
+    path: Annotated[str, Field(description="The virtual path of the file or directory to get information about.")]
+) -> str:
+    """Get metadata for a file or directory, such as size, modification times, and permissions."""
     try:
         def format_time(timestamp):
             return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
-        real_path = validate_virtual_path(args.virtual_path)
+        real_path = validate_virtual_path(path)
         stats = os.stat(real_path)
         info = {
-            "path": args.virtual_path,
+            "path": path,
             "size": stats.st_size,
             "created": format_time(stats.st_ctime),
             "modified": format_time(stats.st_mtime),
@@ -305,12 +300,12 @@ def get_file_info(args: DirArgs) -> str:
         }
         return "\n".join(f"{k}: {v}" for k, v in info.items())
     except Exception as e:
-        return get_error_message("Error getting info", args.virtual_path, e)
+        return get_error_message("Error getting info", path, e)
 
 
 @mcp.tool
 def list_allowed_directories() -> str:
-    """List accessible directories. Use this once before trying to access files."""
+    """List the top-level virtual directories that are accessible."""
     return "### Allowed directories:\n" + "\n".join(_virtual_to_real.keys())
 
 
