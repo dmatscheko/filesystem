@@ -1,16 +1,18 @@
 import asyncio
+import base64
 from collections import deque
 from datetime import datetime
 import difflib
 import fnmatch
+import mimetypes
 from mcp.server import InitializationOptions, NotificationOptions, Server
 import mcp.server.stdio
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ImageContent
 import os
 from pydantic import BaseModel, Field, ValidationError
 import re
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 # Custom error class
@@ -57,6 +59,56 @@ def validate_virtual_path(virtual_path: str) -> str:
         if any(real_parent.startswith(d + os.sep) or real_parent == d for d in _allowed_real_dirs):
             return real_path
         raise PermissionError("Access denied")
+
+
+def get_file_type(file_path: str) -> Tuple[str, bool]:
+    """Detect file type using magic numbers and extension.
+    Returns (mime_type, is_binary)
+    """
+    try:
+        # Read first 16 bytes for magic number detection
+        with open(file_path, 'rb') as f:
+            header = f.read(16)
+        
+        # Check magic numbers for common image formats
+        if header.startswith(b'\x89PNG\r\n\x1a\n'):
+            return 'image/png', True
+        elif header.startswith(b'\xFF\xD8\xFF'):
+            return 'image/jpeg', True
+        elif header.startswith(b'GIF87a') or header.startswith(b'GIF89a'):
+            return 'image/gif', True
+        elif header.startswith(b'BM'):
+            return 'image/bmp', True
+        elif len(header) >= 12 and header.startswith(b'RIFF') and header[8:12] == b'WEBP':
+            return 'image/webp', True
+        elif header.startswith(b'\x00\x00\x00\x0C') or header.startswith(b'\x00\x00\x00\x14'):
+            # HEIC/HEIF magic numbers
+            return 'image/heic', True
+        
+        # Check for PDF
+        if header.startswith(b'%PDF'):
+            return 'application/pdf', True
+        
+        # Check for ZIP-based formats
+        if header.startswith(b'PK\x03\x04'):
+            return 'application/zip', True
+    except:
+        pass
+    
+    # Fall back to mimetypes for extension-based detection
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if mime_type:
+        is_binary = mime_type.startswith(('image/', 'video/', 'audio/', 'application/'))
+        return mime_type, is_binary
+    
+    # Try to detect if it's text by attempting to decode
+    try:
+        with open(file_path, 'rb') as f:
+            chunk = f.read(1024)
+            chunk.decode('utf-8')
+        return 'text/plain', False
+    except (UnicodeDecodeError, Exception):
+        return 'application/octet-stream', True
 
 
 def get_error_message(message, virtual_path: str, e: Exception) -> str:
@@ -246,22 +298,40 @@ async def list_tools() -> List[Tool]:
 
 
 @server.call_tool()
-async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]:
+async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent | ImageContent]:
     """Execute tools, converting virtual paths to real paths and returning virtual paths in output."""
     if name == "read_file":
         try:
             a = ReadFileArgs(**args)
             real_path = validate_virtual_path(a.virtual_path)
-            if a.head is not None and a.tail is not None:
-                raise CustomFileSystemError("Specify either head or tail, not both")
-            if a.head is not None:
-                content = head_file(real_path, a.head)
-            elif a.tail is not None:
-                content = tail_file(real_path, a.tail)
+            
+            # Detect file type
+            mime_type, is_binary = get_file_type(real_path)
+            
+            if is_binary:
+                # Read as binary
+                with open(real_path, "rb") as f:
+                    binary_content = f.read()
+                base64_content = base64.b64encode(binary_content).decode('ascii')
+                
+                # Return appropriate content type
+                if mime_type.startswith('image/'):
+                    return [ImageContent(type="image", data=base64_content, mimeType=mime_type)]
+                else:
+                    # For non-image binary files, return as base64-encoded text
+                    return [TextContent(type="text", text=f"Binary file ({mime_type})\nBase64: {base64_content}")]
             else:
-                with open(real_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            return [TextContent(type="text", text=content)]
+                # Read as text
+                if a.head is not None and a.tail is not None:
+                    raise CustomFileSystemError("Specify either head or tail, not both")
+                if a.head is not None:
+                    content = head_file(real_path, a.head)
+                elif a.tail is not None:
+                    content = tail_file(real_path, a.tail)
+                else:
+                    with open(real_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                return [TextContent(type="text", text=content)]
         except Exception as e:
             print(f"Debug: read_file error: type={type(e).__name__}, message={str(e)}")
             return [TextContent(type="text", text=get_error_message("Error reading", None if "a" not in locals() else a.virtual_path, e))]
@@ -276,8 +346,17 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
                     try:
                         seen.add(virtual_path)
                         real_path = validate_virtual_path(virtual_path)
-                        content = open(real_path, "r", encoding="utf-8").read()
-                        results.append(f"### {virtual_path}:\n```\n{content}\n```\n")
+                        
+                        # Detect file type
+                        mime_type, is_binary = get_file_type(real_path)
+                        
+                        if is_binary:
+                            # For binary files, just note the type and size
+                            size = os.path.getsize(real_path)
+                            results.append(f"### {virtual_path}:\n[Binary file - {mime_type}, {size} bytes]\n")
+                        else:
+                            content = open(real_path, "r", encoding="utf-8").read()
+                            results.append(f"### {virtual_path}:\n```\n{content}\n```\n")
                     except Exception as e:
                         results.append(f"### {virtual_path}:\n{get_error_message('Error reading', virtual_path, e)}\n")
             return [TextContent(type="text", text="\n".join(results))]
@@ -363,6 +442,13 @@ async def call_tool(name: str, args: Dict[str, Any] | None) -> List[TextContent]
                 "isFile": os.path.isfile(real_path),
                 "permissions": oct(stats.st_mode)[-3:],
             }
+            
+            # Add MIME type for files
+            if os.path.isfile(real_path):
+                mime_type, is_binary = get_file_type(real_path)
+                info["mimeType"] = mime_type
+                info["isBinary"] = is_binary
+            
             return [TextContent(type="text", text="\n".join(f"{k}: {v}" for k, v in info.items()))]
         except Exception as e:
             return [TextContent(type="text", text=get_error_message("Error getting info", None if "a" not in locals() else a.virtual_path, e))]
